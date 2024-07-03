@@ -3,14 +3,11 @@ name: Publish Docker image on FLUIDOS Docker Hub
 on:
   push:
     tags: [ 'v*.*.*' ]
-  release:
-    types: [published]
+    branches:
+      - main
 
 env:
-  REGISTRY: docker.io
   IMAGE_BASE_NAME: fluidos-metaorchestrator
-  ORG_NAME: fluidos
-  BASE_BRANCH: github
 
 jobs:
   push_to_registry:
@@ -41,7 +38,7 @@ jobs:
           context: .
           tags: |
             ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_BASE_NAME }}:latest
-            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_BASE_NAME }}:$GITHUB_SHA
+            # ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_BASE_NAME }}:$GITHUB_SHA
           push: true
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new
