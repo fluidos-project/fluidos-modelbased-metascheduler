@@ -9,6 +9,7 @@ spec:
     name: mspl-intent
     annotations:
       fluidos-intent-throughput: "100ms"
+      fluidos-location: Turin
       fluidos-intent-mspl:  <?xml version="1.0" encoding="UTF-8" standalone="yes"?><ITResourceOrchestration xmlns="http://modeliosoft/xsddesigner/a22bd60b-ee3d-425c-8618-beb6a854051a/ITResource.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="omspl_5b0fd7359a5e40fe92399710c1152ed9" xsi:schemaLocation="http://modeliosoft/xsddesigner/a22bd60b-ee3d-425c-8618-beb6a854051a/ITResource.xsd mspl.xsd"><ITResource id="mspl_9e9dbbdfad5d4ef588fc5ec579f83c59" orchestrationID="omspl_5b0fd7359a5e40fe92399710c1152ed9"><configuration xsi:type="RuleSetConfiguration"><capability><Name>Firewall</Name></capability><configurationRule><configurationRuleAction xsi:type="FirewallRuleAction"><firewallActionType>DROP</firewallActionType></configurationRuleAction><configurationCondition xsi:type="FirewallConfigurationCondition"><isCNF>false</isCNF><ruleParameters><isCNF>false</isCNF><destinationAddress>0.0.0.0/0</destinationAddress><action>drop</action><sourceAddress>192.168.0.1</sourceAddress><name>ejemplo2</name></ruleParameters></configurationCondition><externalData xsi:type="Priority"><value>60000</value></externalData><Name>Rule0</Name><isCNF>false</isCNF></configurationRule><Name>Conf0</Name></configuration><enablerCandidates><enabler>firewall</enabler></enablerCandidates></ITResource></ITResourceOrchestration>
   spec:
     containers:
