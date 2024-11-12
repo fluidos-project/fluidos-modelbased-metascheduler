@@ -1,5 +1,4 @@
 from fluidos_model_orchestrator.common import KnownIntent
-# from pytest import fail
 
 
 def test_intent_values():
@@ -8,8 +7,8 @@ def test_intent_values():
         "fluidos-intent-battery",
         "fluidos-intent-compliance",
         "fluidos-intent-cpu",
-        "fluidos-intent-max_delay",
-        "fluidos-intent-carbon_aware",
+        "fluidos-intent-max-delay",
+        "fluidos-intent-carbon-aware",
         "fluidos-intent-energy",
         "fluidos-intent-gpu",
         "fluidos-intent-latency",
@@ -18,6 +17,9 @@ def test_intent_values():
         "fluidos-intent-resource",
         "fluidos-intent-service",
         "fluidos-intent-throughput",
+        "fluidos-intent-bandwidth-against",
+        "fluidos-intent-tee-available",
+        "fluidos-intent-mspl",
     }
 
     for intent in KnownIntent:
@@ -34,8 +36,8 @@ def test_iternal_or_external():
         "fluidos-intent-battery",
         "fluidos-intent-compliance",
         "fluidos-intent-cpu",
-        "fluidos-intent-max_delay",
-        "fluidos-intent-carbon_aware",
+        "fluidos-intent-max-delay",
+        "fluidos-intent-carbon-aware",
         "fluidos-intent-energy",
         "fluidos-intent-gpu",
         "fluidos-intent-latency",
@@ -43,12 +45,15 @@ def test_iternal_or_external():
         "fluidos-intent-memory",
         "fluidos-intent-resource",
         "fluidos-intent-throughput",
+        "fluidos-intent-bandwidth-against",
+        "fluidos-intent-tee-available",
+        "fluidos-intent-mspl",
     }
 
     for intent in KnownIntent:
         key = intent.to_intent_key()
-        assert (key in internal_intents and key not in external_intents) or (key in external_intents and key not in internal_intents)
-        assert (intent.has_external_requirement() and key in external_intents) or (key in internal_intents)
+        assert (key in internal_intents and key not in external_intents) or (key in external_intents and key not in internal_intents), key
+        assert (intent.is_external_requirement() and key in external_intents) or (key in internal_intents), key
 
 
 def test_intent_validated():

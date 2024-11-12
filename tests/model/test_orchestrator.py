@@ -3,17 +3,14 @@ import pytest  # type: ignore
 from fluidos_model_orchestrator.common import ModelPredictRequest
 from fluidos_model_orchestrator.common import ModelPredictResponse
 from fluidos_model_orchestrator.model.candidate_generation.model import Orchestrator as CGOrchestrator
-from fluidos_model_orchestrator.model.model_basic_ranker.model import BasicRankerModel
 from fluidos_model_orchestrator.model.orchestrator_factory import OrchestratorFactory
 from fluidos_model_orchestrator.model.utils import MODEL_TYPES
 
-ORCHESTRATOR_MODELS_TO_TEST = [MODEL_TYPES.BASIC_RANKER, MODEL_TYPES.CG, MODEL_TYPES.CG_LEGACY]
+ORCHESTRATOR_MODELS_TO_TEST = [MODEL_TYPES.CG, MODEL_TYPES.CG_LEGACY]
 
 
 def create_orchestrator_sample_request(model_type: str) -> ModelPredictRequest:
-    if model_type == MODEL_TYPES.BASIC_RANKER:
-        return BasicRankerModel.create_sample_request()
-    elif model_type == MODEL_TYPES.CG:
+    if model_type == MODEL_TYPES.CG:
         return CGOrchestrator.create_sample_request()
     elif model_type == MODEL_TYPES.CG_LEGACY:
         return CGOrchestrator.create_sample_request_legacy()

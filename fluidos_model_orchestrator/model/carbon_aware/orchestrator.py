@@ -1,10 +1,12 @@
 import logging
 from datetime import datetime
 from datetime import timedelta
+from typing import cast
 
 import numpy as np  # type: ignore
 
 from fluidos_model_orchestrator.common import cpu_to_int
+from fluidos_model_orchestrator.common import FlavorK8SliceData
 from fluidos_model_orchestrator.common import KnownIntent
 from fluidos_model_orchestrator.common import memory_to_int
 from fluidos_model_orchestrator.common import ModelPredictRequest
@@ -98,18 +100,19 @@ class CarbonAwareOrchestrator(OrchestratorInterface):
         flavours: list[CarbonAwareFlavour] = []
         for provider in providers:
             flavor = provider.flavor
+            type_data = cast(FlavorK8SliceData, flavor.spec.flavor_type.type_data)
             _debug(f"provider ID: {provider.id}")
             _debug(f"flavor ID: {provider.flavor.metadata.name}")
-            _debug(f"flavor optional_fields: {flavor.spec.flavor_type.type_data.properties}")
+            _debug(f"flavor optional_fields: {type_data.properties}")
             flavours.append(
                 CarbonAwareFlavour(
                     flavor.metadata.name,
-                    flavor.spec.flavor_type.type_data.properties.get("embodied", ),  # flavor.optional_fields.get("embodied"),
+                    type_data.properties.get("embodied", ),
                     4,
-                    cpu_to_int(flavor.spec.flavor_type.type_data.characteristics.cpu),
-                    memory_to_int(flavor.spec.flavor_type.type_data.characteristics.memory),
-                    flavor.spec.flavor_type.type_data.characteristics.storage,
-                    flavor.spec.flavor_type.type_data.properties.get("operational", ),  # flavor.optional_fields.get("operational")
+                    cpu_to_int(type_data.characteristics.cpu),
+                    memory_to_int(type_data.characteristics.memory),
+                    type_data.characteristics.storage,
+                    type_data.properties.get("operational", None),
                 ))
 
         logging.debug(f"flavours: {flavours}")

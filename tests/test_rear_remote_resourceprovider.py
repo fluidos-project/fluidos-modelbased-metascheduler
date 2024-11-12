@@ -58,7 +58,6 @@ def test_basic_creation(k8s: AClusterManager) -> None:
         ),
         "peeringcandidate-fluidos.eu-k8s-fluidos-c3978e7c",
         "reservation-test-sample",
-        "default",
         k8s_client,
         seller
     )
@@ -114,7 +113,6 @@ def test_resource_buying(k8s: AClusterManager) -> None:
         ),
         "peeringcandidate-fluidos.eu-k8s-fluidos-c3978e7c",
         "reservation-test-sample",
-        "default",
         k8s_client,
         seller
     )

@@ -85,3 +85,6 @@ electricity_map:
 
 configuration:
   architecture: amd64  # default architecture, change to your preferred arch
+
+mspl:
+  endpoint: "<REPLACE WITH MY LOVELY MSPL ENDPOINT>"

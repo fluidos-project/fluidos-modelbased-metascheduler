@@ -9,9 +9,10 @@ from fluidos_model_orchestrator.configuration import CONFIGURATION
 logger = logging.getLogger(__name__)
 
 
-def request_application(policy: str, endpoint: str) -> str:
+def request_application(policy: str, endpoint: str, request_name: str) -> str:
+    endpoint = endpoint + "/" + request_name
     try:
-        response = requests.post(endpoint, data=policy, headers={
+        response = requests.post(endpoint, data=policy.strip(), headers={
             "Content-Type": "application/xml"
         })
 

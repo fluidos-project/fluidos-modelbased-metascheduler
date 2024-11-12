@@ -7,10 +7,20 @@ from abc import abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
-from enum import auto
 from enum import Enum
 from enum import unique
 from typing import Any
+from typing import cast
+
+from .flavor import build_flavor  # noqa
+from .flavor import Flavor
+from .flavor import FlavorCharacteristics  # noqa
+from .flavor import FlavorK8SliceData
+from .flavor import FlavorMetadata  # noqa
+from .flavor import FlavorSpec  # noqa
+from .flavor import FlavorType
+from .flavor import FlavorTypeData  # noqa
+from .flavor import GPUData
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +32,7 @@ class ResourceProvider(ABC):
         self.flavor = flavor
 
     @abstractmethod
-    def acquire(self) -> bool:
+    def acquire(self, namespace: str) -> bool:
         raise NotImplementedError("Abstract method")
 
     @abstractmethod
@@ -31,6 +41,11 @@ class ResourceProvider(ABC):
 
     def __str__(self) -> str:
         return f"{self.id=}: {self.flavor=}"
+
+
+class ExternalResourceProvider(ABC):
+    def enrich(self, container: dict[str, Any], name: str) -> None:
+        raise NotImplementedError("Abstract method")
 
 
 @dataclass(kw_only=True)
@@ -45,24 +60,28 @@ class Resource:
     pods: str | int | None = None
 
     def can_run_on(self, flavor: Flavor) -> bool:
-        logger.debug(f"Testing {self=} against {flavor=}")
-        if self.cpu is not None and not _cpu_compatible(self.cpu, flavor.spec.flavor_type.type_data.characteristics.cpu):
+        if flavor.spec.flavor_type.type_identifier is not FlavorType.K8SLICE:
             return False
 
-        if self.memory is not None and not _memory_compatible(self.memory, flavor.spec.flavor_type.type_data.characteristics.memory):
+        type_data = cast(FlavorK8SliceData, flavor.spec.flavor_type.type_data)
+
+        if self.cpu is not None and not _cpu_compatible(self.cpu, type_data.characteristics.cpu):
             return False
 
-        if self.architecture is not None and self.architecture != flavor.spec.flavor_type.type_data.characteristics.architecture:
+        if self.memory is not None and not _memory_compatible(self.memory, type_data.characteristics.memory):
+            return False
+
+        if self.architecture is not None and self.architecture != type_data.characteristics.architecture:
             return False
 
         if self.gpu is not None:
             our_gpu = _convert_to_gpudata(self.gpu)
-            their_gpu = _convert_to_gpudata(flavor.spec.flavor_type.type_data.characteristics.gpu)
+            their_gpu = _convert_to_gpudata(type_data.characteristics.gpu)
 
             return our_gpu.can_run_on(their_gpu)
 
         if self.pods is not None:
-            return int(self.pods) == int(flavor.spec.flavor_type.type_data.characteristics.pods if flavor.spec.flavor_type.type_data.characteristics.pods is not None else 0)
+            return int(self.pods) == int(type_data.characteristics.pods if type_data.characteristics.pods is not None else 0)
 
         # TODO: add checks for storage
 
@@ -116,77 +135,6 @@ def cpu_to_int(spec: str) -> int:
 
 
 @dataclass
-class GPUData:
-    cores: int | str = 0
-    memory: int | str = 0
-    model: str = ""
-
-    def can_run_on(self, other: GPUData) -> bool:
-        return int(other.cores) >= int(self.cores) and int(other.memory) >= int(self.memory)
-
-
-@dataclass(kw_only=True)
-class FlavorCharacteristics:
-    cpu: str
-    architecture: str
-    memory: str
-    gpu: GPUData | str | int = "0"
-    pods: str | None = None
-    storage: str | None = None
-
-
-@unique
-class FlavorType(Enum):
-    K8SLICE = auto()
-    VM = auto()
-    SERVICE = auto()
-    SENSOR = auto()
-
-    @staticmethod
-    def factory(type_name: str) -> FlavorType:
-        if type_name == "K8Slice":
-            return FlavorType.K8SLICE
-
-        raise ValueError(f"Not supported {type_name=}")
-
-
-@dataclass(kw_only=True)
-class FlavorMetadata:
-    name: str
-    owner_references: dict[str, Any]
-
-
-@dataclass(kw_only=True)
-class FlavorK8SliceData:
-    characteristics: FlavorCharacteristics
-    policies: dict[str, Any] = field(default_factory=dict)
-    properties: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(kw_only=True)
-class FlavorTypeData:
-    type_identifier: FlavorType
-    type_data: FlavorK8SliceData
-
-
-@dataclass(kw_only=True)
-class FlavorSpec:
-    availability: bool
-    flavor_type: FlavorTypeData
-    network_property_type: str
-    owner: dict[str, Any]
-    providerID: str
-    price: dict[str, Any] = field(default_factory=dict)
-    location: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(kw_only=True)
-class Flavor:
-    metadata: FlavorMetadata
-    spec: FlavorSpec
-
-
-@dataclass
 class ContainerImageEmbedding:
     image: str
     embedding: str | None = None
@@ -212,7 +160,6 @@ class ModelPredictResponse:
 
 
 class OrchestratorInterface(ABC):
-
     def load(self) -> Any:
         raise NotImplementedError("Not implemented: abstract method")
 
@@ -235,19 +182,24 @@ def _validate_regulations(provider: ResourceProvider, value: str) -> bool:
     or such
     """
     value = value.casefold()
-    for field_name, field_value in provider.flavor.spec.flavor_type.type_data.properties.items():
-        if str(field_value).casefold() == value:
-            return True
+    if provider.flavor.spec.flavor_type.type_identifier is FlavorType.K8SLICE:
+        for _, field_value in cast(FlavorK8SliceData, provider.flavor.spec.flavor_type.type_data).properties.items():
+            if str(field_value).casefold() == value:
+                return True
 
     return False
 
 
 def _check_cpu(provider: ResourceProvider, value: str) -> bool:
-    return _cpu_compatible(value, provider.flavor.spec.flavor_type.type_data.characteristics.cpu)
+    if provider.flavor.spec.flavor_type.type_identifier is FlavorType.K8SLICE:
+        return _cpu_compatible(value, cast(FlavorK8SliceData, provider.flavor.spec.flavor_type.type_data).characteristics.cpu)
+    return False
 
 
 def _check_memory(provider: ResourceProvider, value: str) -> bool:
-    return _memory_compatible(value, provider.flavor.spec.flavor_type.type_data.characteristics.memory)
+    if provider.flavor.spec.flavor_type.type_identifier is FlavorType.K8SLICE:
+        return _memory_compatible(value, cast(FlavorK8SliceData, provider.flavor.spec.flavor_type.type_data).characteristics.memory)
+    return False
 
 
 def _convert_to_gpudata(gpu: GPUData | str | int | dict[str, Any]) -> GPUData:
@@ -270,14 +222,15 @@ def _convert_to_gpudata(gpu: GPUData | str | int | dict[str, Any]) -> GPUData:
 
 
 def _check_gpu(provider: ResourceProvider, value: str) -> bool:
-    data = json.loads(value)
+    if provider.flavor.spec.flavor_type.type_identifier is FlavorType.K8SLICE:
+        data = json.loads(value)
 
-    gpu: GPUData = _convert_to_gpudata(provider.flavor.spec.flavor_type.type_data.characteristics.gpu)
+        gpu: GPUData = _convert_to_gpudata(cast(FlavorK8SliceData, provider.flavor.spec.flavor_type.type_data).characteristics.gpu)
 
-    if type(data) is dict:
-        return gpu.can_run_on(_convert_to_gpudata(data))
-    elif type(data) is int:
-        return int(gpu.cores) >= data
+        if type(data) is dict:
+            return gpu.can_run_on(_convert_to_gpudata(data))
+        elif type(data) is int:
+            return int(gpu.cores) >= data
 
     return False
 
@@ -292,13 +245,58 @@ def validate_location(provider: ResourceProvider, value: str) -> bool:
     )
 
 
+def _validate_bandwidth_against_point(provider: ResourceProvider, value: str) -> bool:
+    if provider.flavor.spec.flavor_type.type_identifier is not FlavorType.K8SLICE:
+        return False
+
+    # assumes value is of the form "<operator> value <point>"
+    [operator, quantity, point] = value.split(" ")
+
+    type_data = cast(FlavorK8SliceData, provider.flavor.spec.flavor_type.type_data)
+
+    bandwidth_properties = type_data.properties.get("bandwidth", {}).get(point, None)
+
+    if bandwidth_properties is not None:
+        # assume that bandwidth_property is in ms
+        bandwidth = int(bandwidth_properties[:-2])
+        required_bandwidth = int(quantity[:-2])   # assumes quantity = "\d+ms"
+
+        match operator:
+            case ">":
+                return bandwidth > required_bandwidth
+            case ">=":
+                return bandwidth >= required_bandwidth
+            case "<":
+                return bandwidth < required_bandwidth
+            case "<=":
+                return bandwidth <= required_bandwidth
+            case "=":
+                return bandwidth == required_bandwidth
+            case _:
+                raise ValueError(f"Unknown operator {operator=}")
+    return False
+
+
+def _validate_architecture(provider: ResourceProvider, value: str) -> bool:
+    if provider.flavor.spec.flavor_type.type_identifier is FlavorType.K8SLICE:
+        return value == cast(FlavorK8SliceData, provider.flavor.spec.flavor_type.type_data).characteristics.architecture
+    return False
+
+
+def _validate_tee_available(provider: ResourceProvider, value: str) -> bool:
+    if provider.flavor.spec.flavor_type.type_identifier is FlavorType.K8SLICE:
+        properties = cast(FlavorK8SliceData, provider.flavor.spec.flavor_type.type_data).properties
+        return value.capitalize() == str(properties.get("TEE", "False")).capitalize()
+    return False
+
+
 @unique
 class KnownIntent(Enum):
     # k8s resources
     cpu = "cpu", False, _check_cpu
     memory = "memory", False, _check_memory
     gpu = "gpu", False, _check_gpu
-    architecture = "architecture", False, lambda provider, value: value == provider.flavor.spec.flavor_type.type_data.characteristics.architecture
+    architecture = "architecture", False, _validate_architecture
 
     # high order requests
     latency = "latency", False, _always_true
@@ -309,25 +307,33 @@ class KnownIntent(Enum):
     battery = "battery", False, _always_true
 
     # carbon aware requests
-    max_delay = "max_delay", False, _always_true
-    carbon_aware = "carbon_aware", False, _always_true
+    max_delay = "max-delay", False, _always_true
+    carbon_aware = "carbon-aware", False, _always_true
+
+    # TER
+    bandwidth_against = "bandwidth-against", False, _validate_bandwidth_against_point
+    tee_available = "tee-available", False, _validate_tee_available
 
     # service
     service = "service", True, _always_true
+
+    #mspl
+    mspl = "mspl", False, _always_true
 
     def __new__(cls, *args: str, **kwds: str) -> KnownIntent:
         obj = object.__new__(cls)
         obj._value_ = args[0]
         return obj
 
-    def __init__(self, _: str, external: bool, validator: Callable[[ResourceProvider, str], bool]):
+    def __init__(self, label: str, external: bool, validator: Callable[[ResourceProvider, str], bool]):
+        self.label = label
         self._external = external
         self._validator = validator
 
     def to_intent_key(self) -> str:
-        return f"fluidos-intent-{self.name}"
+        return f"fluidos-intent-{self.label}"
 
-    def has_external_requirement(self) -> bool:
+    def is_external_requirement(self) -> bool:
         return self._external
 
     def validates(self, provider: ResourceProvider, value: str) -> bool:
@@ -339,7 +345,7 @@ class KnownIntent(Enum):
             intent_name = "-".join(intent_name.split("-")[2:])
 
         return any(
-            known_intent.name == intent_name for known_intent in KnownIntent
+            known_intent.label == intent_name for known_intent in KnownIntent
         )
 
     @staticmethod
@@ -357,19 +363,18 @@ class Intent:
     name: KnownIntent
     value: str
 
-    def has_external_requirement(self) -> bool:
-        return self.name.has_external_requirement()
+    def is_external_requirement(self) -> bool:
+        return self.name.is_external_requirement()
 
     def validates(self, provider: ResourceProvider) -> bool:
         return self.name.validates(provider, self.value)
 
 
-def validate_on_intent(resources: list[ResourceProvider], intent: Intent) -> ResourceProvider:
-    return resources[0]  # for now
-
-
 class ResourceFinder(ABC):
-    def find_best_match(self, resource: Resource | Intent, namespace: str) -> list[ResourceProvider]:
+    def find_best_match(self, resource: Resource, namespace: str) -> list[ResourceProvider]:
+        raise NotImplementedError()
+
+    def find_service(self, id: str, service: Intent, namespace: str) -> list[ExternalResourceProvider]:
         raise NotImplementedError()
 
     def retrieve_all_flavors(self, namespace: str) -> list[Flavor]:
@@ -377,60 +382,3 @@ class ResourceFinder(ABC):
 
     def update_local_flavor(self, flavor: Flavor, data: Any, namespace: str) -> None:
         raise NotImplementedError()
-
-
-def build_flavor(flavor: dict[str, Any]) -> Flavor:
-    if "kind" in flavor:
-        if flavor["kind"] != "Flavor":
-            raise ValueError(f"Unable to process kind {flavor['kind']}")
-    else:
-        logger.info("Building flavor from spec, not object")
-
-    return Flavor(
-        metadata=_build_metadata(flavor["metadata"]),
-        spec=_build_spec(flavor["spec"]),
-    )
-
-
-def _build_metadata(metadata: dict[str, Any]) -> FlavorMetadata:
-    return FlavorMetadata(
-        name=metadata["name"],
-        owner_references=metadata.get("ownerReferences", {}),
-    )
-
-
-def _build_spec(spec: dict[str, Any]) -> FlavorSpec:
-    return FlavorSpec(
-        availability=spec["availability"],
-        flavor_type=_build_flavor_type(spec["flavorType"]),
-        location=spec["location"],
-        network_property_type=spec["networkPropertyType"],
-        owner=spec["owner"],
-        price=spec["price"],
-        providerID=spec["providerID"],
-    )
-
-
-def _build_flavor_type(flavor_type_data: dict[str, Any]) -> FlavorTypeData:
-    flavor_type = FlavorType.factory(flavor_type_data["typeIdentifier"])
-    return FlavorTypeData(
-        type_identifier=flavor_type,
-        type_data=_build_flavor_type_data(flavor_type, flavor_type_data["typeData"])
-    )
-
-
-def _build_flavor_type_data(flavor_type: FlavorType, data: dict[str, Any]) -> FlavorK8SliceData:
-    if flavor_type is FlavorType.K8SLICE:
-        return FlavorK8SliceData(
-            characteristics=FlavorCharacteristics(
-                cpu=data["characteristics"]["cpu"],
-                architecture=data["characteristics"]["architecture"],
-                memory=data["characteristics"]["memory"],
-                gpu=data["characteristics"]["gpu"],
-                pods=data["characteristics"]["pods"],
-                storage=data["characteristics"]["storage"],
-            ),
-            policies=data.get("policies", {}),
-            properties=data.get("properties", {})
-        )
-    raise ValueError(f"Unsupported flavor type: {flavor_type}")

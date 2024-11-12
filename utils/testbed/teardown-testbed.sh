@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -xauo pipefail
+set -xeuo pipefail
 
 kind get clusters | xargs kind delete clusters
 

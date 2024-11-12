@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -xao pipefail
+set -xeuo pipefail
 
 
 function _get_command {
@@ -83,4 +83,4 @@ kubectl apply --kubeconfig $PWD/consumer-config.yaml -f $PWD/../../deployment/fl
 
 
 # pretend the consumer cluster is in Dublin, Ireland
-kubectl get flavor -n fluidos --no-headers --kubeconfig $PWD/consumer-config.yaml | cut -f1 -d\  | xargs -I% kubectl patch flavor/%  --patch-file ./flavors-location-ireland.yaml --type merge -n fluidos --kubeconfig $PWD/consumer-config.yaml
+kubectl get flavor -n fluidos --no-headers --kubeconfig $PWD/consumer-config.yaml | cut -f1 -d\  | xargs -I% kubectl patch flavor/%  --patch-file $PWD/flavors-location-ireland.yaml --type merge -n fluidos --kubeconfig $PWD/consumer-config.yaml

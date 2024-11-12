@@ -12,5 +12,5 @@ class LocalResourceProvider(ResourceProvider):
             CONFIGURATION.local_node_key: "true"
         }
 
-    def acquire(self) -> bool:
+    def acquire(self, namespace: str) -> bool:
         return True

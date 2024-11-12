@@ -4,5 +4,3 @@ metadata:
   name: fluidos-mbmo-configmap
 data:
   ELECTRICITY_MAP_API_KEY: TEST_KEY_123!
-  architecture: "arm64"
-  MSPL_ENDPOINT: "http://fluidos-mspl.sl.cloud9.ibm.com:8002/meservice/"

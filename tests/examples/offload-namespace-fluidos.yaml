@@ -1,0 +1,12 @@
+apiVersion: offloading.liqo.io/v1alpha1
+kind: NamespaceOffloading
+metadata:
+  creationTimestamp: null
+  name: offloading
+  namespace: fluidos
+spec:
+  clusterSelector:
+    nodeSelectorTerms: []
+  namespaceMappingStrategy: DefaultName
+  podOffloadingStrategy: LocalAndRemote
+status: {}

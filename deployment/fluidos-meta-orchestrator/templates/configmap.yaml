@@ -5,3 +5,4 @@ metadata:
 data:
   ELECTRICITY_API_KEY: {{ .Values.electricity_map.key }}
   architecture: {{ .Values.configuration.architecture }}
+  MSPL_ENDPOINT: {{ .Values.mspl.endpoint }}

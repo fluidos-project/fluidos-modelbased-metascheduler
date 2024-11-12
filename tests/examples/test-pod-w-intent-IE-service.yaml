@@ -1,25 +1,19 @@
 apiVersion: fluidos.eu/v1
 kind: FLUIDOSDeployment
 metadata:
-  name: nginx-w-intent-turin
+  name: nginx-w-intent-ie
 spec:
   apiVersion: v1
   kind: Pod
   metadata:
-    name: nginx-w-intent
+    name: nginx-w-intent-ie
     annotations:
       fluidos-intent-throughput: 100ms
-      fluidos-intent-location: Turin
+      fluidos-intent-location: Dublin
+      fluidos-intent-service: message-queue
   spec:
     containers:
     - name: nginx
       image: nginx:1.14.2
       ports:
       - containerPort: 80
-      resources:
-        requests:
-          memory: "64Mi"
-          cpu: "250m"
-        limits:
-          memory: "128Mi"
-          cpu: "500m"

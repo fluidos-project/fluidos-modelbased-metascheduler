@@ -128,11 +128,16 @@ spec:
                           of the Flavor. It can be unknown if the Flavor is provided
                           by a reseller or a third party.
                         properties:
+                          additionalInformation:
+                            description: NodeIdentityAdditionalInfo contains additional
+                              information about the node.
+                            properties:
+                              liqoID:
+                                type: string
+                            type: object
                           domain:
                             type: string
                           ip:
-                            type: string
-                          liqoID:
                             type: string
                           nodeID:
                             type: string
@@ -192,12 +197,14 @@ spec:
                     - lastUpdateTime
                     type: object
                 type: object
-              solverID:
-                type: string
+              interestedSolverIDs:
+                items:
+                  type: string
+                type: array
             required:
             - available
             - flavor
-            - solverID
+            - interestedSolverIDs
             type: object
           status:
             description: PeeringCandidateStatus defines the observed state of PeeringCandidate.

@@ -222,7 +222,7 @@ class OrchestrationModel(BaseOrchestrationModel, PyTorchModelHubMixin):
 class Orchestrator(OrchestratorInterface):
     embedding_model_name: str = "distiluse-base-multilingual-cased-v2"  # TODO read from metadata
 
-    def __init__(self, model_name: str = "fluidos/candidate-generation", device: str = "cpu", feedback_db_path: Path = Path("feedback.csv")) -> None:
+    def __init__(self, model_name: str = "fluidos/candidate-generation", device: str = "cpu", feedback_db_path: Path = Path("tests/model/feedback/feedback.csv")) -> None:
         self.model_name = model_name
         self.orchestrator: OrchestrationModel | OrchestrationModelLegacy
         metadata_filename = "metadata_cg_v0.0.2.json"
@@ -284,7 +284,12 @@ class Orchestrator(OrchestratorInterface):
 
     def _check_feedback_for_relevant_candidates(self, image_name: str) -> tuple[torch.Tensor, torch.Tensor]:
         logger.info(f"{self.feedback_db_path.absolute()}")
-        feedback = pd.read_csv(self.feedback_db_path.absolute())
+        try:
+            feedback = pd.read_csv(self.feedback_db_path.absolute())
+        except:
+            logger.warning(f"No feedback was found for {image_name} at {self.feedback_db_path.absolute()}")
+            return torch.tensor([], dtype=torch.int32).unsqueeze(0), torch.tensor([], dtype=torch.int32).unsqueeze(0)
+        
         image_feedback = feedback[feedback['image_name'] == image_name]
         relevant_candidates_ids = image_feedback[image_feedback['status'] == FEEDBACK_STATUS.OK]['template_resource_id'].tolist()
         non_relevant_candidates_ids = image_feedback[image_feedback['status'] == FEEDBACK_STATUS.FAIL]['template_resource_id'].tolist()
@@ -302,6 +307,9 @@ class Orchestrator(OrchestratorInterface):
         pod_embedding = self.__compute_embedding_for_sentence(str(data.pod_request[FLUIDOS_COL_NAMES.POD_MANIFEST]))
         intents_dict: dict[str, Any] = {}
         for intent in data.intents:
+            if intent.name.name not in KNOWN_INTENT_TO_POD_INTENT:
+                logger.info(f"Skipping {intent.name}")
+                continue  # patch for skipping unmanaged intent
             intent_name = KNOWN_INTENT_TO_POD_INTENT[intent.name.name]
             unit_len = -1 * len(D_UNITS[intent_name][0])
             intent_value = intent.value[:unit_len]

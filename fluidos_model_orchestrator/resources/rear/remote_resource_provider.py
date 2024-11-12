@@ -4,7 +4,6 @@ import logging
 import time
 from typing import Any
 
-import kopf  # type: ignore
 from kubernetes import client  # type: ignore
 from kubernetes.client.exceptions import ApiException  # type: ignore
 
@@ -16,25 +15,23 @@ logger = logging.getLogger(__name__)
 
 
 class RemoteResourceProvider(ResourceProvider):
-    def __init__(self, id: str, flavor: Flavor, peering_candidate: str, reservation: str, namespace: str, api_client: client.CustomObjectsApi, seller: dict[str, Any]) -> None:
+    def __init__(self, id: str, flavor: Flavor, peering_candidate: str, reservation: str, api_client: client.CustomObjectsApi, seller: dict[str, Any]) -> None:
         super().__init__(id, flavor)
         self.peering_candidate = peering_candidate
         self.reservation = reservation
-        self.namespace = namespace
         self.api_client = api_client
         self.seller = seller
         self.contract: str | None = None
 
-    def acquire(self) -> bool:
+    def acquire(self, namespace: str) -> bool:
         logger.info("Creating connection to remote node")
         contract = self._buy()
         if contract is None:
             return False
         self.contract = contract
-        return self._establish_peering(contract)
+        return self._establish_peering(contract, namespace)
 
     def get_label(self) -> dict[str, str]:
-        # return {"liqo.io/type": "virtual-node"}
         if self.contract is None:
             logger.error("Remote resource not bougth, cannot return valid label")
             raise RuntimeError("RemoteResourceProvider not connected to active resource")
@@ -51,7 +48,7 @@ class RemoteResourceProvider(ResourceProvider):
             resource = self.api_client.get_namespaced_custom_object(
                 group="reservation.fluidos.eu",
                 version="v1alpha1",
-                namespace=self.namespace,
+                namespace=CONFIGURATION.namespace,
                 plural="contracts",
                 name=self.contract
             )
@@ -70,14 +67,12 @@ class RemoteResourceProvider(ResourceProvider):
 
         try:
             logger.info(f"Reserving peering candidate {self.peering_candidate}")
-            body = self._create_reservation(self.id, self.peering_candidate, self.namespace, self.seller)
-
-            kopf.adopt(body)
+            body = self._create_reservation(self.id, self.peering_candidate, CONFIGURATION.namespace, self.seller)
 
             response: dict[str, Any] = self.api_client.create_namespaced_custom_object(
                 group="reservation.fluidos.eu",
                 version="v1alpha1",
-                namespace=self.namespace,
+                namespace=CONFIGURATION.namespace,
                 plural="reservations",
                 body=body,
                 async_req=False
@@ -100,7 +95,7 @@ class RemoteResourceProvider(ResourceProvider):
                 response = self.api_client.get_namespaced_custom_object(
                     group="reservation.fluidos.eu",
                     version="v1alpha1",
-                    namespace=self.namespace,
+                    namespace=CONFIGURATION.namespace,
                     plural="reservations",
                     name=body["metadata"]["name"],
                     async_req=False
@@ -116,7 +111,7 @@ class RemoteResourceProvider(ResourceProvider):
 
         return contract_name
 
-    def _establish_peering(self, contract_name: str) -> bool:
+    def _establish_peering(self, contract_name: str, namespace: str) -> bool:
         logger.info(f"Establishing peering for {self.peering_candidate}")
 
         allocation_name = f"{self.id}-allocation"
@@ -133,18 +128,16 @@ class RemoteResourceProvider(ResourceProvider):
                 # Retrieve information from the reservation and the contract
                 "contract": {
                     "name": contract_name,
-                    "namespace": self.namespace
+                    "namespace": CONFIGURATION.namespace
                 }
             }
         }
-
-        kopf.adopt(body)
 
         try:
             allocation = self.api_client.create_namespaced_custom_object(
                 group="nodecore.fluidos.eu",
                 version="v1alpha1",
-                namespace=self.namespace,
+                namespace=CONFIGURATION.namespace,
                 plural="allocations",
                 body=body,
                 async_req=False)  # type: ignore
@@ -153,38 +146,44 @@ class RemoteResourceProvider(ResourceProvider):
                 logger.info("Allocation created")
                 # logger.info(f"{json.dumps(allocation)}")
 
-                return self._create_namespace_offload_resource()
+                return self._create_namespace_offload_resource(namespace)
         except ApiException as e:
             logger.error(f"Error establishing peering for {self.peering_candidate}")
             logger.error(f"{e=}")
 
         return False
 
-    def _create_namespace_offload_resource(self) -> bool:
+    def _create_namespace_offload_resource(self, namespace: str) -> bool:
         try:
             for _ in range(CONFIGURATION.n_try):
                 res = self.api_client.create_namespaced_custom_object(
                     group="offloading.liqo.io",
                     version="v1alpha1",
-                    namespace=self.namespace,
+                    namespace=namespace,
                     plural="namespaceoffloadings",
                     body={
+                        "apiVersion": "offloading.liqo.io/v1alpha1",
+                        "kind": "NamespaceOffloading",
                         "metadata": {
                             "name": "offloading"
                         },
                         "spec": {
-                            "namespaceMappingStrategy": "EnforceSameName",
-                            "podOffloadinStrategy": "LocalAndRemote",
+                            "kind": "NamespaceOffloading",
+                            "clusterSelector": {
+                                "nodeSelectorTerms": []
+                            },
+                            "namespaceMappingStrategy": "DefaultName",
+                            "podOffloadingStrategy": "LocalAndRemote",
                         }
                     },
                     async_req=False)  # type: ignore
 
                 if res is not None:
-                    logger.info(f"NamespaceOffload created for {self.namespace}")
+                    logger.info(f"NamespaceOffload created for {namespace}")
 
                     return True
         except ApiException as e:
-            logger.error(f"Error offloading namespace {self.namespace}")
+            logger.error(f"Error offloading namespace {namespace}")
             logger.error(f"{e=}")
             logger.error(f"{e.reason=}")
 

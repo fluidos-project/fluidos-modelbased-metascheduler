@@ -1,0 +1,35 @@
+apiVersion: fluidos.eu/v1
+kind: FLUIDOSDeployment
+metadata:
+  name: y2demo
+spec:
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: y2demo-pod
+    annotations:
+      fluidos-intent-throughput: 100ms
+      fluidos-intent-location: Turin
+      fluidos-intent-service: message-queue
+  spec:
+    containers:
+    - image: quay.io/stefano_braghin/fluidos-demo:producer
+      imagePullPolicy: IfNotPresent
+      name: producer
+      resources:
+        requests:
+          memory: "64Mi"
+          cpu: "250m"
+        limits:
+          memory: "128Mi"
+          cpu: "500m"
+    - image: quay.io/stefano_braghin/fluidos-demo:client
+      imagePullPolicy: IfNotPresent
+      name: consumer
+      resources:
+        requests:
+          memory: "64Mi"
+          cpu: "250m"
+        limits:
+          memory: "128Mi"
+          cpu: "500m"

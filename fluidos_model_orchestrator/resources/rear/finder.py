@@ -6,11 +6,11 @@ import time
 import uuid
 from typing import Any
 
-import kopf  # type: ignore
 from kubernetes import client  # type: ignore
 from kubernetes.client.exceptions import ApiException  # type: ignore
 
 from fluidos_model_orchestrator.common import build_flavor
+from fluidos_model_orchestrator.common import ExternalResourceProvider
 from fluidos_model_orchestrator.common import Flavor
 from fluidos_model_orchestrator.common import FlavorType
 from fluidos_model_orchestrator.common import Intent
@@ -21,43 +21,140 @@ from fluidos_model_orchestrator.configuration import CONFIGURATION
 from fluidos_model_orchestrator.configuration import Configuration
 from fluidos_model_orchestrator.resources.rear.local_resource_provider import LocalResourceProvider
 from fluidos_model_orchestrator.resources.rear.remote_resource_provider import RemoteResourceProvider
+from fluidos_model_orchestrator.resources.rear.service_resource_provider import build_REARServiceResourceProvider
 
 logger = logging.getLogger(__name__)
 
 
 class REARResourceFinder(ResourceFinder):
-    SOLVER_SLEEPING_TIME = 0.2  # as float, in seconds ~200ms
-
     def __init__(self, configuration: Configuration = CONFIGURATION) -> None:
-        self.api_client: client.CustomObjectsApi = client.CustomObjectsApi(api_client=configuration.k8s_client)
+        self.configuration = configuration
+        self.api_client: client.CustomObjectsApi = client.CustomObjectsApi(api_client=self.configuration.k8s_client)
         self.identity: dict[str, str] = configuration.identity
 
-    def find_best_match(self, request: Resource | Intent, namespace: str) -> list[ResourceProvider]:
-        logger.info("Retrieving best match with REAR")
+    def find_best_match(self, resource: Resource, namespace: str) -> list[ResourceProvider]:
+        logger.info("Retrieving resource best match with REAR")
 
-        if type(request) is Resource:
-            resource = request
-        elif type(request) is Intent:
-            logger.info("Request is for \"intent-defined\" resource")
-            return []  # not supported yet
-        else:
-            raise ValueError(f"Unkown resource type {type(request)}")
-
-        logger.info("Request is for \"traditional\" resource")
-        local: list[ResourceProvider] = self._find_local(resource, namespace)
+        local: list[ResourceProvider] = self._find_local(resource, CONFIGURATION.namespace)
 
         if len(local):
             logger.info(f"Found local resource {local=}")
         else:
             logger.info("No local resource compatible")
 
-        remote = self._find_remote(resource, namespace)
+        remote = self._find_remote(resource, CONFIGURATION.namespace)
 
         logger.info(f"Found remote resource {remote=}")
 
         return local + remote
 
+    def _resource_to_service_sorver_request(self, service: Intent, intent_id: str) -> tuple[dict[str, Any], str]:
+        if intent_id is None:
+            intent_id = str(uuid.uuid4())
+
+        solver_request = {
+            "apiVersion": "nodecore.fluidos.eu/v1alpha1",
+            "kind": "Solver",
+            "metadata": {
+                "name": f"service-{service.name.name}-{intent_id}-solver"
+            },
+            "spec": {
+                "intentID": intent_id,
+                "findCandidate": True,
+                "reserveAndBuy": True,
+                "establishPeering": True,
+                "selector": {
+                    "flavorType": "Service",
+                    "filters": {
+                        "categoryFilter": {
+                            "name": "Match",
+                            "data": {
+                                "value": service.value
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return (solver_request, intent_id)
+
+    def find_service(self, id: str, service: Intent, namespace: str) -> list[ExternalResourceProvider]:
+        logger.info("Retrieving service with REAR")
+
+        body, _ = self._resource_to_service_sorver_request(service, id)
+
+        solver_name = self._initiate_search(body, namespace)
+
+        # NOTE: FOR SERVICE SOLVER DOES NOT SOLVE
+        # Check status of Allocation with .status.status == "Active" and
+        # find right allocation using .spec.contract.name == "<contract name>"
+        # contract name is retrieved from Reservation where .spec.solverID == "solver-name", there one finds .status.contract.name
+
+        for _ in range(CONFIGURATION.n_try):
+            time.sleep(CONFIGURATION.SOLVER_SLEEPING_TIME)
+
+            reservations: None | dict[str, Any] = self.api_client.list_namespaced_custom_object(
+                group="reservation.fluidos.eu",
+                version="v1alpha1",
+                plural="reservations",
+                namespace=CONFIGURATION.namespace,
+                async_req=False  # type: ignore
+            )
+
+            if reservations is None:
+                continue
+
+            valid_reservations = [reservation for reservation in reservations.get("items", []) if reservation["spec"]["solverID"] == solver_name and reservation.get("status", {}).get("contract", {}).get("name", None) is not None]
+
+            if len(valid_reservations) == 0:
+                # either no reservation or not with valid status
+                continue
+            if len(valid_reservations) == 1:
+                break
+        else:
+            # assume no service found
+            logger.info("No valid service found (no valid reservation)")
+            return []
+
+        contract_name = valid_reservations[0]["status"]["contract"]["name"]
+
+        # Check status of Allocation with .status.status == "Active" and
+        # find right allocation using .spec.contract.name == "<contract name>"
+        for _ in range(CONFIGURATION.n_try):
+            time.sleep(CONFIGURATION.SOLVER_SLEEPING_TIME * 1.5)
+            logger.info(f"Searching valid allocation for {contract_name}")
+
+            allocations: None | dict[str, Any] = self.api_client.list_namespaced_custom_object(
+                group="nodecore.fluidos.eu",
+                version="v1alpha1",
+                plural="allocations",
+                namespace=CONFIGURATION.namespace,
+                async_req=False  # type: ignore
+            )
+
+            if allocations is None:
+                continue
+
+            for allocation in allocations.get("items", []):
+                if allocation.get("spec", {}).get("contract", {}).get("name", None) == contract_name:
+                    logger.info("Allocation found")
+                    if allocation.get("status", {}).get("status", "") == "Active":
+                        logger.info("Allocation is active!")
+                        if len(allocation["status"]["resourceRef"]):
+                            logger.info("resourceRef available")
+                            return [
+                                build_REARServiceResourceProvider(self.configuration.k8s_client, allocation)
+                            ]
+                    else:
+                        logger.info(f"Allocation is not active \n---\n {json.dumps(allocation)}\n---\n")
+        else:
+            # assume no allocation found in time
+            logger.info("No valid service found (no active allocation for contract)")
+            return []
+
     def retrieve_all_flavors(self, namespace: str) -> list[Flavor]:
+
         logger.info("Retrieving all flavours")
 
         locally_available_flavours = self._get_locally_available_flavors(namespace)
@@ -108,6 +205,7 @@ class REARResourceFinder(ResourceFinder):
             response = None
 
         if response is None or response["kind"] != "Solver":
+            logger.debug("Solver not existing, creating")
             response = self.api_client.create_namespaced_custom_object(
                 group="nodecore.fluidos.eu",
                 version="v1alpha1",
@@ -147,12 +245,10 @@ class REARResourceFinder(ResourceFinder):
 
         body, _ = self._resource_to_solver_request(resource, resource.id)
 
-        kopf.adopt(body)
-
         solver_name = self._initiate_search(body, namespace)
 
         for _ in range(CONFIGURATION.n_try):
-            time.sleep(self.SOLVER_SLEEPING_TIME)
+            time.sleep(CONFIGURATION.SOLVER_SLEEPING_TIME)
             remote_flavour_status = self._check_solver_status(solver_name, namespace)
 
             if remote_flavour_status is None or "status" not in remote_flavour_status:
@@ -229,7 +325,6 @@ class REARResourceFinder(ResourceFinder):
             flavor=build_flavor(candidate["spec"]["flavor"]),
             peering_candidate=candidate["metadata"]["name"],
             reservation="",  # response["metadata"]["name"],
-            namespace=namespace,
             api_client=self.api_client,
             seller=candidate["spec"]["flavor"]["spec"]["owner"]
         )
@@ -346,8 +441,8 @@ class REARResourceFinder(ResourceFinder):
                 group="nodecore.fluidos.eu",
                 version="v1alpha1",
                 plural="flavors",
-                namespace=namespace,
-            )
+                namespace=namespace)
+
         except ApiException:
             logger.warning("Failed to retrieve local flavors, is node available?")
             flavor_list = {}
