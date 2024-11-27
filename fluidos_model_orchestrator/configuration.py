@@ -26,6 +26,7 @@ class Configuration:
     API_SLEEP_TIME: float = 0.1  # 100 ms
     SOLVER_SLEEPING_TIME: float = .5  # 500ms
     MSPL_ENDPOINT: str = ""
+    prometheus_endpoint: dict[str, str] = field(default_factory=dict)
 
     def check_identity(self, identity: dict[str, str]) -> bool:
         return all(
@@ -49,6 +50,28 @@ def enrich_configuration(config: Configuration,
     # config.architecture = _retrieve_architecture(config, logger)
     config.architecture = "arm64"
     config.MSPL_ENDPOINT = _retrieve_mspl_endpoint(config, logger)
+    config.prometheus_endpoint = _retrieve_prometheus(config, logger)
+
+
+def _retrieve_prometheus(config: Configuration, logger: logging.Logger) -> dict[str, str]:
+    logger.info("Retrieving Prometheus Endpoint information")
+    api_endpoint = CoreV1Api(config.k8s_client)
+
+    try:
+        maps: V1ConfigMapList = api_endpoint.list_config_map_for_all_namespaces()
+        if len(maps.items):
+            for map in maps.items:
+                if map.metadata is None:
+                    continue
+
+                if map.metadata.name == "fluidos-mbmo-configmap":
+                    logger.info("Identified config map, retrieving prometheus information")
+                    return map.data["prometheus"]
+    except ApiException as e:
+        logger.error(f"Unable to retrieve config maps {e=}")
+
+    logger.error("Something went wrong while retrieving secrets")
+    raise ValueError("Unable to retrieve secrets")
 
 
 def _retrieve_api_key_from_secret(config: Configuration, logger: logging.Logger) -> dict[str, str]:

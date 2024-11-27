@@ -6,8 +6,9 @@ flake8
 kubernetes-stubs
 mypy
 numpy
-pytest==7.4.4
+prometheus-api-client==0.5.5
 pytest-kubernetes==0.3.1
+pytest==7.4.4
 requests-mock==1.12.1
 tqdm
 types-PyYAML
