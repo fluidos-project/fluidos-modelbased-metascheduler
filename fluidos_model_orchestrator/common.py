@@ -299,42 +299,45 @@ def _validate_tee_available(provider: ResourceProvider, value: str) -> bool:
 @unique
 class KnownIntent(Enum):
     # k8s resources
-    cpu = "cpu", False, _check_cpu
-    memory = "memory", False, _check_memory
-    gpu = "gpu", False, _check_gpu
-    architecture = "architecture", False, _validate_architecture
+    cpu = "cpu", False, _check_cpu, False, None
+    memory = "memory", False, _check_memory, False, None
+    gpu = "gpu", False, _check_gpu, False, None
+    architecture = "architecture", False, _validate_architecture, False, None
 
     # high order requests
-    latency = "latency", False, _always_true
-    location = "location", False, validate_location
-    throughput = "throughput", False, _always_true
-    compliance = "compliance", False, _validate_regulations
-    energy = "energy", False, _always_true
-    battery = "battery", False, _always_true
+    latency = "latency", False, _always_true, True, "latency-endpoint"
+    location = "location", False, validate_location, False, None
+    throughput = "throughput", False, _always_true, True, "trhoughput"
+    compliance = "compliance", False, _validate_regulations, False, None
+    energy = "energy", False, _always_true, True, "energy-source"
+    battery_level = "battery", False, _always_true, True, "battery-level"
+    battery_status = "battery-status", False, _always_true, True, "battery-status"
 
     # carbon aware requests
-    max_delay = "max-delay", False, _always_true
-    carbon_aware = "carbon-aware", False, _always_true
+    max_delay = "max-delay", False, _always_true, False, None
+    carbon_aware = "carbon-aware", False, _always_true, False, None
 
     # TER
-    bandwidth_against = "bandwidth-against", False, _validate_bandwidth_against_point
-    tee_readiness = "tee-readiness", False, _validate_tee_available
+    bandwidth_against = "bandwidth-against", False, _validate_bandwidth_against_point, False, None
+    tee_readiness = "tee-readiness", False, _validate_tee_available, False, None
 
     # service
-    service = "service", True, _always_true
+    service = "service", True, _always_true, False, None
 
     #mspl
-    mspl = "mspl", False, _always_true
+    mspl = "mspl", False, _always_true, False, None
 
     def __new__(cls, *args: str, **kwds: str) -> KnownIntent:
         obj = object.__new__(cls)
         obj._value_ = args[0]
         return obj
 
-    def __init__(self, label: str, external: bool, validator: Callable[[ResourceProvider, str], bool]):
+    def __init__(self, label: str, external: bool, validator: Callable[[ResourceProvider, str], bool], need_monitoring: bool, metric_name: str | None):
         self.label = label
         self._external = external
         self._validator = validator
+        self._need_monitoring = need_monitoring
+        self._metric_name = metric_name
 
     def to_intent_key(self) -> str:
         return f"fluidos-intent-{self.label}"
@@ -344,6 +347,12 @@ class KnownIntent(Enum):
 
     def validates(self, provider: ResourceProvider, value: str) -> bool:
         return self._validator(provider, value)
+
+    def requires_monitoring(self) -> bool:
+        return self._need_monitoring
+
+    def metric_name(self) -> str | None:
+        return self._metric_name
 
     @staticmethod
     def is_supported(intent_name: str) -> bool:
