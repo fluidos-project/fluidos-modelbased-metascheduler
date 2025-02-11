@@ -299,44 +299,43 @@ def _validate_tee_available(provider: ResourceProvider, value: str) -> bool:
 @unique
 class KnownIntent(Enum):
     # k8s resources
-    cpu = "cpu", False, _check_cpu, False, None
-    memory = "memory", False, _check_memory, False, None
-    gpu = "gpu", False, _check_gpu, False, None
-    architecture = "architecture", False, _validate_architecture, False, None
+    cpu = "cpu", False, _check_cpu, None
+    memory = "memory", False, _check_memory, None
+    gpu = "gpu", False, _check_gpu, None
+    architecture = "architecture", False, _validate_architecture, None
 
     # high order requests
-    latency = "latency", False, _always_true, True, "latency-endpoint"
-    location = "location", False, validate_location, False, None
-    throughput = "throughput", False, _always_true, True, "trhoughput"
-    compliance = "compliance", False, _validate_regulations, False, None
-    energy = "energy", False, _always_true, True, "energy-source"
-    battery_level = "battery", False, _always_true, True, "battery-level"
-    battery_status = "battery-status", False, _always_true, True, "battery-status"
+    latency = "latency", False, _always_true, "latency-endpoint"
+    location = "location", False, validate_location, None
+    throughput = "throughput", False, _always_true, "throughput"
+    compliance = "compliance", False, _validate_regulations, None
+    energy = "energy", False, _always_true, "energy-source"
+    battery_level = "battery", False, _always_true, "battery-level"
+    battery_status = "battery-status", False, _always_true, "battery-status"
 
     # carbon aware requests
-    max_delay = "max-delay", False, _always_true, False, None
-    carbon_aware = "carbon-aware", False, _always_true, False, None
+    max_delay = "max-delay", False, _always_true, None
+    carbon_aware = "carbon-aware", False, _always_true, None
 
     # TER
-    bandwidth_against = "bandwidth-against", False, _validate_bandwidth_against_point, False, None
-    tee_readiness = "tee-readiness", False, _validate_tee_available, False, None
+    bandwidth_against = "bandwidth-against", False, _validate_bandwidth_against_point, None
+    tee_readiness = "tee-readiness", False, _validate_tee_available, None
 
     # service
-    service = "service", True, _always_true, False, None
+    service = "service", True, _always_true, None
 
     #mspl
-    mspl = "mspl", False, _always_true, False, None
+    mspl = "mspl", False, _always_true, None
 
     def __new__(cls, *args: str, **kwds: str) -> KnownIntent:
         obj = object.__new__(cls)
         obj._value_ = args[0]
         return obj
 
-    def __init__(self, label: str, external: bool, validator: Callable[[ResourceProvider, str], bool], need_monitoring: bool, metric_name: str | None):
+    def __init__(self, label: str, external: bool, validator: Callable[[ResourceProvider, str], bool], metric_name: str | None):
         self.label = label
         self._external = external
         self._validator = validator
-        self._need_monitoring = need_monitoring
         self._metric_name = metric_name
 
     def to_intent_key(self) -> str:
@@ -349,10 +348,13 @@ class KnownIntent(Enum):
         return self._validator(provider, value)
 
     def requires_monitoring(self) -> bool:
-        return self._need_monitoring
+        return self._metric_name is not None
 
-    def metric_name(self) -> str | None:
-        return self._metric_name
+    def metric_name(self) -> str:
+        if not self.requires_monitoring():
+            raise ValueError()
+
+        return str(self._metric_name)  # to make flake happy
 
     @staticmethod
     def is_supported(intent_name: str) -> bool:

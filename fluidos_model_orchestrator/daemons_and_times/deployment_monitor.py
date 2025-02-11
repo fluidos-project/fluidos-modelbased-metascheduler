@@ -30,7 +30,9 @@ def intent_still_valid(intents: list[Intent], metrics_data: dict[str, list[Metri
 
 
 def convert_to_metrics(intents: list[Intent]) -> list[str]:
-    raise NotImplementedError()
+    return list({
+        intent.name.metric_name() for intent in intents if intent.name.requires_monitoring()
+    })
 
 
 @kopf.daemon("fluidosdeployments")  # type: ignore
