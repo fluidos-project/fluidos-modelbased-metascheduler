@@ -6,6 +6,7 @@ import kopf  # type: ignore
 
 from fluidos_model_orchestrator.common import Intent
 from fluidos_model_orchestrator.configuration import CONFIGURATION
+from fluidos_model_orchestrator.daemons_and_times.prometheus import connect
 from fluidos_model_orchestrator.daemons_and_times.prometheus import MetricResult
 from fluidos_model_orchestrator.model import _extract_intents
 
@@ -22,6 +23,12 @@ def compute_criticality(intents: list[Intent]) -> int:
 
 
 def get_data_from_prometheus(endpoint: dict[str, str], name: str, metrics: list[str]) -> dict[str, list[MetricResult]]:
+    connection = connect(endpoint)
+
+    connection.all_metrics({
+        "time": ""
+    })
+
     raise NotImplementedError()
 
 
